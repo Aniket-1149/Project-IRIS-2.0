@@ -20,6 +20,7 @@ interface SpeechRecognitionEvent {
       isFinal: boolean;
       [index: number]: {
         transcript: string;
+        confidence?: number;
       };
     };
   };
@@ -56,6 +57,18 @@ export const useVoiceCommands = ({ onTranscript, language }: UseVoiceCommandsPro
       setError("Voice recognition is not supported by your browser.");
       return;
     }
+
+    // Request microphone permission explicitly for PWA
+    const requestMicrophonePermission = async () => {
+      try {
+        await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (err) {
+        console.error("Microphone permission denied:", err);
+        setError("Microphone access is required for voice commands. Please grant permission.");
+      }
+    };
+
+    requestMicrophonePermission();
 
     const recognition = new SpeechRecognition();
     recognition.continuous = true;
@@ -99,11 +112,12 @@ export const useVoiceCommands = ({ onTranscript, language }: UseVoiceCommandsPro
     recognition.onresult = (event) => {
       const lastResult = event.results[event.results.length - 1];
       const transcript = lastResult[0].transcript.trim().toLowerCase();
+      const confidence = lastResult[0].confidence || 0;
       
       if (lastResult.isFinal && transcript && onTranscriptRef.current) {
-        onTranscriptRef.current(transcript, true); // Pass final transcript
+        onTranscriptRef.current(transcript, true, confidence); // Pass final transcript
       } else if (!lastResult.isFinal && transcript && onTranscriptRef.current) {
-        onTranscriptRef.current(transcript, false); // Pass interim transcript
+        onTranscriptRef.current(transcript, false, confidence); // Pass interim transcript
       }
     };
 

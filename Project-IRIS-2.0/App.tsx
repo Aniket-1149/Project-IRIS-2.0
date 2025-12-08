@@ -15,6 +15,7 @@ import { MicrophoneIcon, UserGroupIcon } from './components/Icons';
 import { ItemManager } from './components/ItemManager';
 import { AudioVisualizer } from './components/AudioVisualizer';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
+import { PermissionPrompt } from './components/PermissionPrompt';
 import { AppState, GeminiContent } from './types';
 
 const App: React.FC = () => {
@@ -712,6 +713,9 @@ const App: React.FC = () => {
       
       {/* PWA Install Prompt */}
       <PWAInstallPrompt />
+      
+      {/* Permission Prompt for PWA */}
+      <PermissionPrompt />
     </div>
   );
 };
