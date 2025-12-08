@@ -1,0 +1,8 @@
+{
+  "name": "AI Vision Assistant",
+  "description": "An application that uses your camera and the Gemini API to describe the world around you in real-time. It is designed to assist the visually impaired by providing auditory feedback about their surroundings.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
