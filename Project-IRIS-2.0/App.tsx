@@ -5,6 +5,7 @@ import { useTextToSpeech } from './hooks/useTextToSpeech';
 import { useVoiceCommands } from './hooks/useVoiceCommands';
 import { useSpeechToText } from './hooks/useSpeechToText';
 import { useAudioVisualizer } from './hooks/useAudioVisualizer';
+import { useWakeLock } from './hooks/useWakeLock';
 import { useAuthStore } from './src/store/authStore';
 import * as personalDB from './services/personalDB';
 import { describeScene, readTextFromImage, identifyPeople, checkForHazards, analyzeTerrain, getQuickFrameDescription, findObject, askFollowUpQuestion, getHelp, interpretCommand, askGemini } from './services/geminiService';
@@ -41,7 +42,9 @@ const App: React.FC = () => {
   const { isListening: isListeningForInput, listen: listenForInput } = useSpeechToText();
   const { volume, start: startVisualizer, stop: stopVisualizer } = useAudioVisualizer(stream);
   const { isListening, error: voiceError, startListening, stopListening, pauseListening, resumeListening } = useVoiceCommands({ onTranscript: (t, isFinal) => handleVoiceCommand(t, isFinal), language });
-
+  
+  // Keep screen awake when voice commands are active (important for mobile PWA)
+  useWakeLock(isVoiceCommandActive);
 
   useEffect(() => {
     setPersonalItems(personalDB.getItems());

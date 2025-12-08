@@ -51,6 +51,7 @@ export const useVoiceCommands = ({ onTranscript, language }: UseVoiceCommandsPro
   const isStoppedManually = useRef(false);
   const restartTimerRef = useRef<number | null>(null);
   const isPaused = useRef(false);
+  const isMobileRef = useRef(/iPhone|iPad|iPod|Android/i.test(navigator.userAgent));
 
   useEffect(() => {
     if (!SpeechRecognition) {
@@ -71,34 +72,51 @@ export const useVoiceCommands = ({ onTranscript, language }: UseVoiceCommandsPro
     requestMicrophonePermission();
 
     const recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true; // Enable interim results
+    // On mobile, continuous mode is unreliable, so we use manual restart
+    recognition.continuous = !isMobileRef.current;
+    recognition.interimResults = true;
     recognition.lang = language;
+    
+    // Mobile-specific: increase max alternatives for better recognition
+    if (isMobileRef.current) {
+      (recognition as any).maxAlternatives = 3;
+    }
 
     recognition.onstart = () => {
+      console.log('Speech recognition started');
       setIsListening(true);
       setError(null);
     };
 
     recognition.onend = () => {
+      console.log('Speech recognition ended, paused:', isPaused.current, 'stopped:', isStoppedManually.current);
       setIsListening(false);
-      // Debounced auto-restart logic to prevent race conditions.
+      
+      // Clear any existing restart timer
       if (restartTimerRef.current) {
         clearTimeout(restartTimerRef.current);
       }
+      
+      // Only restart if not manually stopped and not paused
       if (!isStoppedManually.current && !isPaused.current) {
+        // Mobile needs more aggressive restart with longer delay
+        const restartDelay = isMobileRef.current ? 500 : 250;
+        
         restartTimerRef.current = window.setTimeout(() => {
-          try { 
-            recognitionRef.current?.start(); 
-          } catch (e) {
-            // This error is expected if start() is called when already starting. Ignore it.
-            if (e instanceof DOMException && e.name === 'InvalidStateError') {
-              // Silently ignore.
-            } else {
-              console.warn("Could not restart recognition, it was likely stopped.", e);
+          // Double check state before restarting
+          if (!isStoppedManually.current && !isPaused.current) {
+            try { 
+              console.log('Auto-restarting speech recognition');
+              recognitionRef.current?.start(); 
+            } catch (e) {
+              if (e instanceof DOMException && e.name === 'InvalidStateError') {
+                console.log('Recognition already starting, ignoring error');
+              } else {
+                console.warn("Could not restart recognition:", e);
+              }
             }
           }
-        }, 250);
+        }, restartDelay);
       }
     };
 
@@ -123,7 +141,41 @@ export const useVoiceCommands = ({ onTranscript, language }: UseVoiceCommandsPro
 
     recognitionRef.current = recognition;
 
+    // Handle visibility change for mobile PWA
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        console.log('App hidden, pausing recognition');
+        // App went to background, pause recognition
+        if (recognitionRef.current && isListening) {
+          isPaused.current = true;
+          try {
+            recognitionRef.current.stop();
+          } catch (e) {
+            console.warn('Error stopping on visibility change:', e);
+          }
+        }
+      } else {
+        console.log('App visible, resuming recognition');
+        // App came to foreground, resume if it was active
+        if (recognitionRef.current && !isStoppedManually.current) {
+          isPaused.current = false;
+          setTimeout(() => {
+            try {
+              if (!isStoppedManually.current) {
+                recognitionRef.current?.start();
+              }
+            } catch (e) {
+              console.warn('Error resuming on visibility change:', e);
+            }
+          }, 300);
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       isStoppedManually.current = true;
       if (restartTimerRef.current) {
         clearTimeout(restartTimerRef.current);
