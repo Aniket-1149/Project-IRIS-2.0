@@ -412,6 +412,135 @@ Always include distance and direction. Mention terrain for context.`;
     return text;
 };
 
+export const detectCollisionRisk = async (imageData: string): Promise<{ 
+    hasRisk: boolean; 
+    alert: string; 
+    severity: 'critical' | 'warning' | 'safe';
+    objects: Array<{ type: string; distance: string; direction: string }>;
+}> => {
+    const prompt = `COLLISION DETECTION FOR BLIND PERSON - CRITICAL SAFETY!
+
+Look at this camera image carefully. Describe EVERYTHING you see:
+
+1. Is there a PERSON visible? (face, body, hands, legs - ANY part)
+2. Is there a VEHICLE? (car, bike, motorcycle, scooter)  
+3. Are there OBJECTS? (furniture, walls, doors, boxes, anything)
+4. How CLOSE are they? (estimate in feet: 5, 10, 15, 20, 25)
+
+RULES:
+- If you see a PERSON at ANY distance → respond "critical"
+- If you see a VEHICLE at ANY distance → respond "critical"  
+- If you see FURNITURE/OBJECTS close (under 15 feet) → respond "warning"
+- If you see WALLS/BACKGROUND only → respond "warning"
+- ONLY respond "safe" if you see an EMPTY hallway/path with nothing
+
+FORMAT (copy exactly):
+
+SEVERITY: critical
+ALERT: I see [WHAT] at approximately [DISTANCE] feet [DIRECTION]
+
+Examples:
+SEVERITY: critical
+ALERT: I see a person's face at approximately 5 feet in front of camera
+
+SEVERITY: critical  
+ALERT: I see a person standing at approximately 10 feet ahead
+
+SEVERITY: warning
+ALERT: I see a wall at approximately 8 feet ahead
+
+SEVERITY: warning
+ALERT: I see furniture (chair/table) at approximately 10 feet
+
+SEVERITY: safe
+ALERT: Empty corridor, no people or objects detected
+
+BE SPECIFIC: Mention if you see hands, face, body, clothing, furniture, walls - describe what you actually see!`;
+
+    console.log('[Collision Detection] Calling Gemini API...');
+    const { text } = await callVisionModel(prompt, imageData);
+    console.log('[Collision Detection] Gemini response:', text);
+    
+    // Parse the structured response
+    let severity: 'critical' | 'warning' | 'safe' = 'safe';
+    let alert = text;
+    
+    // Try to extract SEVERITY and ALERT from response
+    const severityMatch = text.match(/SEVERITY:\s*(critical|warning|safe)/i);
+    const alertMatch = text.match(/ALERT:\s*(.+?)(?:\n|$)/i);
+    
+    if (severityMatch && severityMatch[1]) {
+        severity = severityMatch[1].toLowerCase() as 'critical' | 'warning' | 'safe';
+        console.log('[Collision Detection] Extracted severity:', severity);
+    }
+    
+    if (alertMatch && alertMatch[1]) {
+        alert = alertMatch[1].trim();
+        console.log('[Collision Detection] Extracted alert:', alert);
+    }
+    
+    // Fallback: if structured format not found, analyze the text
+    if (!severityMatch || !alertMatch) {
+        console.log('[Collision Detection] Structured format not found, analyzing text');
+        console.log('[Collision Detection] Full response for analysis:', text);
+        const lowerText = text.toLowerCase();
+        
+        // Check for critical keywords (more aggressive)
+        if (lowerText.includes('critical') || 
+            lowerText.includes('danger') ||
+            lowerText.includes('immediate') ||
+            /person.*\d+\s*feet/i.test(text) || 
+            /vehicle.*\d+\s*feet/i.test(text) ||
+            /person.*ahead/i.test(text) ||
+            /person.*path/i.test(text) ||
+            /approaching/i.test(text)) {
+            severity = 'critical';
+            console.log('[Collision Detection] Detected as CRITICAL based on keywords');
+        } 
+        // Check for warning keywords
+        else if (lowerText.includes('warning') || 
+                 lowerText.includes('caution') ||
+                 lowerText.includes('obstacle') ||
+                 lowerText.includes('parked') ||
+                 lowerText.includes('wall') ||
+                 lowerText.includes('furniture') ||
+                 /\d+\s*feet/i.test(text)) {
+            severity = 'warning';
+            console.log('[Collision Detection] Detected as WARNING based on keywords');
+        } 
+        // Check for safe keywords
+        else if (lowerText.includes('safe') || 
+                 lowerText.includes('clear') || 
+                 lowerText.includes('empty') ||
+                 /no.*obstacle/i.test(text) || 
+                 /no.*danger/i.test(text) ||
+                 /path.*clear/i.test(text)) {
+            severity = 'safe';
+            console.log('[Collision Detection] Detected as SAFE based on keywords');
+        } 
+        // Default to warning if unsure and something is mentioned
+        else {
+            severity = 'warning';
+            console.log('[Collision Detection] Defaulting to WARNING (uncertain)');
+        }
+        
+        // Extract most meaningful line as alert
+        const lines = text.split('\n').filter(line => line.trim().length > 10);
+        alert = lines[0] || text;
+        console.log('[Collision Detection] Using alert text:', alert);
+    }
+    
+    const result = {
+        hasRisk: severity !== 'safe',
+        alert: alert,
+        severity: severity,
+        objects: []
+    };
+    
+    console.log('[Collision Detection] Final result:', result);
+    return result;
+};
+
 export const getHelp = (): string => {
     return `Of course. Here are the main things you can say: 
     'Describe the scene', 

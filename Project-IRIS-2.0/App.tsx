@@ -6,6 +6,7 @@ import { useVoiceCommands } from './hooks/useVoiceCommands';
 import { useSpeechToText } from './hooks/useSpeechToText';
 import { useAudioVisualizer } from './hooks/useAudioVisualizer';
 import { useWakeLock } from './hooks/useWakeLock';
+import { useCollisionDetection } from './hooks/useCollisionDetection';
 import { useAuthStore } from './src/store/authStore';
 import * as personalDB from './services/personalDB';
 import { describeScene, readTextFromImage, identifyPeople, checkForHazards, analyzeTerrain, getQuickFrameDescription, findObject, askFollowUpQuestion, getHelp, interpretCommand, askGemini } from './services/geminiService';
@@ -29,6 +30,7 @@ const App: React.FC = () => {
   const [findingItemName, setFindingItemName] = useState<string | null>(null);
   const [isVoiceCommandActive, setIsVoiceCommandActive] = useState(false);
   const [language, setLanguage] = useState<'en-US' | 'hi-IN'>('en-US');
+  const [isCollisionDetectionActive, setIsCollisionDetectionActive] = useState(false);
 
   const [lastAnalyzedImage, setLastAnalyzedImage] = useState<string | null>(null);
   const [conversationHistory, setConversationHistory] = useState<GeminiContent[]>([]);
@@ -42,6 +44,37 @@ const App: React.FC = () => {
   const { isListening: isListeningForInput, listen: listenForInput } = useSpeechToText();
   const { volume, start: startVisualizer, stop: stopVisualizer } = useAudioVisualizer(stream);
   const { isListening, error: voiceError, startListening, stopListening, pauseListening, resumeListening, resetError, resumeAfterProcessing } = useVoiceCommands({ onTranscript: (t, isFinal) => handleVoiceCommand(t, isFinal), language });
+  
+  // Collision detection hook
+  const handleCollisionAlert = useCallback((alert: string, severity: 'critical' | 'warning' | 'safe') => {
+    if (severity === 'critical') {
+      // Interrupt current speech for critical alerts
+      cancel();
+      speak(`⚠️ ALERT! ${alert}`);
+    } else if (severity === 'warning') {
+      // Queue warning alerts
+      speak(alert);
+    }
+    setLastResponse(alert);
+  }, [speak, cancel]);
+
+  const { isDetecting: isDetectingCollision, lastAlert, forceCheck } = useCollisionDetection({
+    videoRef,
+    isEnabled: isCollisionDetectionActive && isCameraReady,
+    onAlert: handleCollisionAlert,
+    checkInterval: 2000 // Check every 2 seconds
+  });
+
+  // Debug: Track collision detection state
+  useEffect(() => {
+    console.log('[App] Collision detection state changed:', {
+      isCollisionDetectionActive,
+      isCameraReady,
+      isEnabled: isCollisionDetectionActive && isCameraReady,
+      isDetecting: isDetectingCollision,
+      videoElement: videoRef.current ? 'exists' : 'null'
+    });
+  }, [isCollisionDetectionActive, isCameraReady, isDetectingCollision]);
   
   // Keep screen awake when voice commands are active (important for mobile PWA)
   useWakeLock(isVoiceCommandActive);
@@ -321,6 +354,29 @@ const App: React.FC = () => {
       setError(null);
       setLastResponse("Voice commands active. Say a command like 'describe scene' or 'help'.");
     }
+  };
+
+  const toggleCollisionDetection = () => {
+    console.log('[App] Toggling collision detection. Current state:', isCollisionDetectionActive);
+    console.log('[App] Camera ready:', isCameraReady);
+    console.log('[App] VideoRef:', videoRef.current);
+    
+    setIsCollisionDetectionActive(prev => {
+      const newState = !prev;
+      console.log('[App] New collision detection state:', newState);
+      
+      if (newState) {
+        if (!isCameraReady) {
+          console.warn('[App] WARNING: Camera is not ready! Collision detection may not work.');
+        }
+        setLastResponse("Collision detection activated. Monitoring for approaching objects...");
+        speak("Collision detection activated");
+      } else {
+        setLastResponse("Collision detection deactivated.");
+        speak("Collision detection deactivated");
+      }
+      return newState;
+    });
   };
 
   const processTerrainAction = async () => {
@@ -639,10 +695,59 @@ const App: React.FC = () => {
                   </svg>
                   <span className="ml-3 text-lg">{isVoiceCommandActive ? '● LISTENING' : 'START VOICE CONTROL'}</span>
                 </button>
+                
+                {/* Collision Detection Toggle */}
+                <button
+                  onClick={toggleCollisionDetection}
+                  disabled={!isCameraReady || !!cameraError}
+                  className={`relative flex items-center justify-center px-6 py-3 rounded-xl font-semibold text-white transition-all duration-300 shadow-lg focus:outline-none focus:ring-4 w-full
+                    ${isCollisionDetectionActive 
+                      ? 'bg-gradient-to-r from-orange-600 to-orange-500 hover:from-orange-500 hover:to-orange-400 focus:ring-orange-400 shadow-orange-500/50' 
+                      : 'bg-gradient-to-r from-gray-700 to-gray-600 hover:from-gray-600 hover:to-gray-500 focus:ring-gray-500 shadow-gray-500/50'}
+                    ${(!isCameraReady || !!cameraError) ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105 active:scale-95'}`
+                  }
+                  aria-label={isCollisionDetectionActive ? "Deactivate collision detection" : "Activate collision detection"}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={`w-6 h-6 ${isDetectingCollision ? 'animate-pulse' : ''}`}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                  </svg>
+                  <span className="ml-2">
+                    {isCollisionDetectionActive ? '🟢 Collision Alert ON' : 'Collision Alert OFF'}
+                  </span>
+                  {isDetectingCollision && (
+                    <span className="ml-2 text-xs bg-white/20 px-2 py-0.5 rounded-full">Scanning...</span>
+                  )}
+                </button>
+
                 {isVoiceCommandActive && (
                   <div className="w-full">
                     <AudioVisualizer volume={volume} />
                     <p className="text-center text-sm text-gray-400 mt-2">Say a command or "help" for options</p>
+                  </div>
+                )}
+
+                {/* Collision Detection Alert Display */}
+                {isCollisionDetectionActive && lastAlert && lastAlert.hasRisk && (
+                  <div className={`w-full mt-4 p-4 rounded-xl border-2 ${
+                    lastAlert.severity === 'critical' 
+                      ? 'bg-red-500/20 border-red-500 animate-pulse' 
+                      : 'bg-yellow-500/20 border-yellow-500'
+                  }`}>
+                    <div className="flex items-start gap-3">
+                      <svg className={`w-6 h-6 flex-shrink-0 ${
+                        lastAlert.severity === 'critical' ? 'text-red-400' : 'text-yellow-400'
+                      }`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                      <div className="flex-1">
+                        <p className={`font-bold text-sm ${
+                          lastAlert.severity === 'critical' ? 'text-red-300' : 'text-yellow-300'
+                        }`}>
+                          {lastAlert.severity === 'critical' ? '🚨 COLLISION WARNING' : '⚠️ CAUTION'}
+                        </p>
+                        <p className="text-white text-sm mt-1">{lastAlert.alert}</p>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
