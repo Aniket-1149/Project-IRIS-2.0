@@ -75,7 +75,6 @@ const userSchema = new Schema({
   timestamps: true 
 });
 
-// Index for faster queries
-userSchema.index({ email: 1 });
+// Note: email index is automatically created by unique: true
 
 export default model<IUser>('User', userSchema);
