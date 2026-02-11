@@ -134,6 +134,19 @@ Meet the amazing team behind Project IRIS 2.0:
 
 ---
 
+## 🧑‍💻Contributor Experience
+| Contributor |
+| Experience  |
+|**ARYAN RAJ**|
+|🔧Model Training & Development:-
+Worked on training and improving project models, including experimentation, evaluation, and refinement to enhance performance.|
+
+|📝Research & Documentation:-
+Conducted background research, analyzed references, and contributed to structured documentation to improve project clarity and knowledge sharing.|
+
+|🚀Offline Application Development (Hands-on:-
+Gained practical experience working with offline application development, understanding system workflows, integration, and real-world execution aspects.|
+
 ## 🎓 Project Background
 
 Project IRIS 2.0 was developed as part of our commitment to creating inclusive technology that makes a real difference in people's lives. We believe that everyone deserves equal access to information and independence, regardless of their visual abilities.
